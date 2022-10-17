@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -11,16 +11,16 @@ contract Staking {
     struct Stats {
         uint totalStaked;
         uint totalDistributed;
+        uint tokenPerShare;
         uint rewardRate;
         address stakingToken;
-        uint64 lastRewardTimestamp;
         address rewardToken;
-        uint tokenPerShare;
+        uint64 lastRewardTimestamp;
     }
     struct User {
         uint staked;
         uint claimed;
-        uint rewardDept;
+        uint rewardDebt;
     }
 
     Stats public pool;
@@ -34,7 +34,6 @@ contract Staking {
     }
 
     // Events
-    // This generates a public event on the blockchain that will notify clients
     event Staked(address indexed staker, uint256 amount);
     event Withdrawn(address indexed staker, uint256 amount);
     event Claimed(address indexed staker, uint256 amount);
@@ -71,7 +70,7 @@ contract Staking {
         );
         pool.totalStaked += amount;
         staker[msg.sender].staked += amount;
-        staker[msg.sender].rewardDept +=
+        staker[msg.sender].rewardDebt +=
             staker[msg.sender].staked *
             pool.tokenPerShare;
         emit Staked(msg.sender, amount);
@@ -84,8 +83,8 @@ contract Staking {
         IERC20(pool.stakingToken).safeTransfer(msg.sender, amount);
         pool.totalStaked -= amount;
         staker[msg.sender].staked = 0;
-        staker[msg.sender].rewardDept +=
-            staker[msg.sender].staked *
+        staker[msg.sender].rewardDebt +=
+            staker[msg.sender].staked * //??? 0*sth ??????
             pool.tokenPerShare;
         emit Withdrawn(msg.sender, amount);
     }
@@ -94,7 +93,7 @@ contract Staking {
         _updateRewards();
         uint available = staker[msg.sender].staked *
             pool.tokenPerShare -
-            staker[msg.sender].rewardDept;
+            staker[msg.sender].rewardDebt;
         require(available > 0, "Nothing to harvest");
         IERC20(pool.rewardToken).safeTransfer(msg.sender, available);
         pool.totalDistributed += available;
@@ -120,11 +119,11 @@ contract Staking {
             uint multiplier = block.timestamp - pool.lastRewardTimestamp;
             uint reward = (multiplier * pool.rewardRate) / 3600;
             uint share = pool.tokenPerShare + reward / pool.totalStaked;
-            return (share * staker[user].staked) - staker[user].rewardDept;
+            return (share * staker[user].staked) - staker[user].rewardDebt;
         } else {
             return
                 (pool.tokenPerShare * staker[user].staked) -
-                staker[user].rewardDept;
+                staker[user].rewardDebt;
         }
     }
 }

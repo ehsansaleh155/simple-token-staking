@@ -4,55 +4,44 @@ const {
 } = require("@nomicfoundation/hardhat-network-helpers");
 const { anyValue } = require("@nomicfoundation/hardhat-chai-matchers/withArgs");
 const { expect } = require("chai");
-const hre = require("hardhat");
 
-const StakingContract = artifacts.require("Staking");
-contract("Staking", () => {
-  it("has been deployed successfully?", async () => {
-    const Staking1 = await hre.ethers.getContractFactory("Staking");
-    const lock = await Staking1.deploy();
-    const Staking = await StakingContract.deployed();
-    assert(Staking, "contract was not deployed");
-  });
-});
+describe("Lock", function () {
+  // We define a fixture to reuse the same setup in every test.
+  // We use loadFixture to run this setup once, snapshot that state,
+  // and reset Hardhat Network to that snapshot in every test.
+  async function deployOneYearLockFixture() {
+    const ONE_YEAR_IN_SECS = 365 * 24 * 60 * 60;
+    const ONE_GWEI = 1_000_000_000;
 
-describe("Staking", function () {
-  async function deployLockFixture() {
+    const lockedAmount = ONE_GWEI;
+    const unlockTime = (await time.latest()) + ONE_YEAR_IN_SECS;
+
+    // Contracts are deployed using the first signer/account by default
     const [owner, otherAccount] = await ethers.getSigners();
 
-    const initialSupply = 10000 * 10 ** 18;
-    const StakingToken = await hre.ethers.getContractFactory("SToken");
-    const RewardToken = await hre.ethers.getContractFactory("RToken");
-    const stakingToken = await StakingToken.deploy(initialSupply);
-    const rewardToken = await RewardToken.deploy(initialSupply);
-    await stakingToken.deployed();
-    await rewardToken.deployed();
+    const Lock = await ethers.getContractFactory("Lock");
+    const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
 
-    const Staking = await hre.ethers.getContractFactory("Staking");
-    const staking = await Staking.deploy(
-      stakingToken.address,
-      rewardToken.address,
-      rewardRate
-    );
-
-    return { staking, owner, otherAccount };
+    return { lock, unlockTime, lockedAmount, owner, otherAccount };
   }
 
   describe("Deployment", function () {
     it("Should set the right unlockTime", async function () {
-      const { lock, unlockTime } = await loadFixture(deployLockFixture);
+      const { lock, unlockTime } = await loadFixture(deployOneYearLockFixture);
 
       expect(await lock.unlockTime()).to.equal(unlockTime);
     });
 
     it("Should set the right owner", async function () {
-      const { lock, owner } = await loadFixture(deployLockFixture);
+      const { lock, owner } = await loadFixture(deployOneYearLockFixture);
 
       expect(await lock.owner()).to.equal(owner.address);
     });
 
     it("Should receive and store the funds to lock", async function () {
-      const { lock, lockedAmount } = await loadFixture(deployLockFixture);
+      const { lock, lockedAmount } = await loadFixture(
+        deployOneYearLockFixture
+      );
 
       expect(await ethers.provider.getBalance(lock.address)).to.equal(
         lockedAmount
@@ -72,7 +61,7 @@ describe("Staking", function () {
   describe("Withdrawals", function () {
     describe("Validations", function () {
       it("Should revert with the right error if called too soon", async function () {
-        const { lock } = await loadFixture(deployLockFixture);
+        const { lock } = await loadFixture(deployOneYearLockFixture);
 
         await expect(lock.withdraw()).to.be.revertedWith(
           "You can't withdraw yet"
@@ -81,7 +70,7 @@ describe("Staking", function () {
 
       it("Should revert with the right error if called from another account", async function () {
         const { lock, unlockTime, otherAccount } = await loadFixture(
-          deployLockFixture
+          deployOneYearLockFixture
         );
 
         // We can increase the time in Hardhat Network
@@ -94,7 +83,9 @@ describe("Staking", function () {
       });
 
       it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-        const { lock, unlockTime } = await loadFixture(deployLockFixture);
+        const { lock, unlockTime } = await loadFixture(
+          deployOneYearLockFixture
+        );
 
         // Transactions are sent using the first signer by default
         await time.increaseTo(unlockTime);
@@ -106,7 +97,7 @@ describe("Staking", function () {
     describe("Events", function () {
       it("Should emit an event on withdrawals", async function () {
         const { lock, unlockTime, lockedAmount } = await loadFixture(
-          deployLockFixture
+          deployOneYearLockFixture
         );
 
         await time.increaseTo(unlockTime);
@@ -120,7 +111,7 @@ describe("Staking", function () {
     describe("Transfers", function () {
       it("Should transfer the funds to the owner", async function () {
         const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-          deployLockFixture
+          deployOneYearLockFixture
         );
 
         await time.increaseTo(unlockTime);
